@@ -1,73 +1,170 @@
-# React + TypeScript + Vite
+# Fast Double-Click — Aplicação React + Node.js
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+O projeto Fast Double-Click tem o objetivo de medir o tempo entre dois cliques consecutivos de um usuário e registrar esses resultados. O sistema é composto por duas páginas: uma para registrar cliques e outra para visualizar, filtrar e ordenar os registros obtidos.
 
-Currently, two official plugins are available:
+## Estrutura do Projeto
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+``` text
+double-click
+│
+├── src/
+│   │   ├── pages/
+│   │   │   ├── Home.tsx        # Página principal com botão de medição
+│   │   │   └── Registros.tsx   # Página de listagem e filtros
+│   ├── App.tsx
+│   ├── main.tsx
+│   └── index.css
+├── index.html
+├── package.json
+├── tailwind.config.js
+├── server.js        ← Servidor Node.js
+├── package.json
+├── registros.json   # Arquivo de dados (gerado automaticamente)
+└── README.md
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Pré-requisitos
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Antes de rodar o projeto, verifique se você tem instalado:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+* Node.js versão 18 ou superior
+* npm
+
+Para confirmar, rode:
+
+``` console
+node -v
+npm -v
 ```
+
+## Como rodar o projeto
+
+### 1 - Clonar o repositório
+
+``` console
+git clone https://github.com/MarianiPedro/double-click.git
+cd double-click
+```
+
+### 2 - Instalar dependências do Front-end
+
+Dentro da pasta do projeto (onde está o package.json gerado pelo Vite):
+
+``` console
+npm install
+```
+
+### 3 - Instalar dependências do Back-end
+
+Ainda na raiz do projeto, instale o Express e o CORS:
+
+``` console
+npm install express cors
+```
+
+### 4 - Rodar o servidor (Back-end)
+
+Use o arquivo server.js com este conteúdo:
+
+``` js
+import express from "express";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const REGISTROS_PATH = path.join(__dirname, "registros.json");
+
+// garante o arquivo
+function ensureFile() {
+  if (!fs.existsSync(REGISTROS_PATH)) fs.writeFileSync(REGISTROS_PATH, "[]", "utf-8");
+}
+
+// lê registros
+function readRegistros() {
+  ensureFile();
+  const raw = fs.readFileSync(REGISTROS_PATH, "utf-8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+// grava registros
+function writeRegistros(registros) {
+  fs.writeFileSync(REGISTROS_PATH, JSON.stringify(registros, null, 2), "utf-8");
+}
+
+// POST /api/register  { elapsedMs: number }
+app.post("/api/register", (req, res) => {
+  const elapsedMs = Number(req.body.elapsedMs);
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0)
+    return res.status(400).json({ error: "elapsedMs inválido" });
+
+  const registros = readRegistros();
+  const novo = {
+    id: registros.length ? registros[registros.length - 1].id + 1 : 1,
+    elapsedMs,
+    createdAt: new Date().toISOString(),
+  };
+
+  registros.push(novo);
+  writeRegistros(registros);
+  res.status(201).json(novo);
+});
+
+// GET /api/registers -> lista todos
+app.get("/api/registers", (_req, res) => {
+  const registros = readRegistros();
+  res.json(registros);
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`✅ API rodando em http://localhost:${port}`));
+ensureFile();
+```
+
+Para iniciar o servidor:
+
+``` console
+node server.js
+```
+
+### 5 - Configurar o Front-end
+
+Crie um arquivo .env na raiz do projeto com:
+
+``` env
+VITE_API_BASE=http://localhost:3000
+```
+
+### 6 - Rodar o Front-end
+
+No terminal:
+
+``` console
+npm run dev
+```
+
+## Como funciona
+
+* Página principal — Home.tsx
+  * Possui um único botão.
+  * O usuário precisa clicar duas vezes rapidamente.
+  * O sistema calcula o tempo entre os dois cliques.
+  * O resultado é enviado ao back-end, que salva no arquivo registros.json.
+
+* Página de registros — Registros.tsx
+  * Exibe todos os registros salvos com:
+  * Data e hora da medição;
+  * Tempo registrado (em milissegundos);
+  * Permite filtrar por intervalo de datas;
+  * Permite ordenar por data ou por tempo, em ordem ascendente ou descendente.
